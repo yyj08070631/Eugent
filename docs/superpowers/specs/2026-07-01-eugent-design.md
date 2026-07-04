@@ -22,7 +22,7 @@
 | 6 | Skill 可见度 | 内部路由 + **斜杠指令手动切**（`/research` / `/code` / `/default`），flash 分类结果不可见，手动指令显 badge |
 | 7 | 目标平台 | 仅 macOS |
 | — | 模型 | DeepSeek `deepseek-v4-pro`（默认）/ `deepseek-v4-flash` 二选一；OpenAI 兼容协议接入；base_url `https://api.deepseek.com` |
-| — | 技术栈 | Bun（开发期 runtime）+ Electron + React + TS + Vite + SQLite + Tailwind 4 + shadcn/ui |
+| — | 技术栈 | Node + **pnpm 11** + Electron + React + TS + Vite + SQLite + Tailwind 4 + shadcn/ui |
 
 ## 3 · 架构总览
 
@@ -132,7 +132,7 @@ interface ToolResult {
 | `shell` | write | 用 `child_process.spawn`；默认 zsh；首次弹权限 |
 | `web_search` | read | 第三方 API（v1 用 Tavily/Serper 之一，用户填 key） |
 | `web_fetch` | read | 拉 URL 转 markdown（`@mozilla/readability` + `turndown`） |
-| `code_exec` | write | 沙箱内跑 Python 或 JS；具体沙箱方案（`vm2` / Docker / `deno`）v1 起手用 `deno run --allow-none`，最安全；首次弹权限 |
+| `code_exec` | write | **v1 仅支持 JS**，用 Node 内置 `vm.runInNewContext` + 超时 + 内存上限；无外部依赖；首次弹权限。Python 留 v2 |
 
 ## 5 · 数据流
 
@@ -300,8 +300,8 @@ CREATE TABLE settings (
 | 消息区 | 常驻 | 用户气泡（右）+ 助手气泡（左）+ tool 卡片（贴触发它的助手气泡下） |
 | tool 卡片 | 有 `tool_call` 事件 | 折叠：工具名 · 简短参数 · 状态图标；展开：完整 args + result JSON |
 | 权限确认弹框 | 写类工具首次调用 | 工具名 + args 预览 + 三按钮：仅本次 / 本会话总是 / 拒绝 |
-| 设置抽屉 | 点击左下 ⚙ | 模型下拉 + API key + 「测试连通性」 + 主题 + 工作区目录 + 搜索 provider/key |
-| 首次启动引导 | `api_key_enc` 为空 | **强制推设置抽屉**，填完才能开聊 |
+| 设置抽屉 | 点击左下 ⚙ | 模型下拉 + API key + 「测试连通性」 + 主题 + 工作区目录（可空）+ 搜索 provider/key |
+| 首次启动引导 | `api_key_enc` 为空 | **强制推设置抽屉**，填完 API key 即可开聊；`workspace_dir` **不必填**（懒选流程见 §7.5） |
 
 ### 7.3 · 交互约定
 
@@ -317,6 +317,16 @@ CREATE TABLE settings (
 - Tailwind CSS 4（Vite 官方支持）
 - shadcn/ui 少量组件（Dialog / DropdownMenu / Tooltip / ScrollArea）
 - 不做完整 shadcn 移植，保持轻量
+
+### 7.5 · workspace_dir 懒选流程
+
+首次启动引导**不要求**填 `workspace_dir`——用户能立刻开聊。当模型首次调用文件类工具（`file_read` / `file_list` / `file_write` / `shell` / `code_exec`）而 `workspace_dir` 为空时：
+
+1. ToolManager 检测到 `workspace_dir` 为空，暂停执行、通过 `approval:request` 附带子 kind `pick_workspace` 通知 renderer
+2. Renderer 弹一个模态：说明「AI 正在尝试访问文件，请选择工作区目录」+ 「选择目录」按钮 + 「拒绝本次调用」按钮
+3. 用户选目录 → 写入 `settings.workspace_dir` → 继续执行原 tool 调用
+4. 用户拒绝 → tool 返回 `{ok:false, error:'no_workspace'}`，交给模型处理
+5. 后续用户随时能在设置抽屉里改 `workspace_dir`
 
 ## 8 · 错误处理
 
@@ -385,7 +395,7 @@ CREATE TABLE settings (
 |---|---|---|
 | 进程模型 | Main + Renderer 双进程（方案 B） | 安全隔离 + Tool 天然 Node API + UI 不阻塞 |
 | 模型 SDK | `openai` SDK 指向 DeepSeek | 兼容协议 + 后续切换成本低 |
-| Bun 定位 | 仅开发期 runtime | Electron 打包后是 Node runtime，避免运行时兼容坑 |
+| Runtime & 包管理 | **Node + pnpm 11**（不用 Bun） | 稳、生态齐、与 Electron 打包完全对齐 |
 | SQLite 驱动 | `better-sqlite3` | 同步 API + 社区最成熟 |
 | API key 存储 | Electron `safeStorage` | 内置无 native binding；`keytar` 已 archived |
 | 状态管理 | Zustand | 小、TS 友好、无样板 |
@@ -395,36 +405,5 @@ CREATE TABLE settings (
 | MAX_TURNS | 20 | 平衡自由度与失控风险 |
 | tool_call args | 完整才显示 | 避免流式 JSON 抖动 |
 | 中断标记 | `messages.partial` 列 | 未来复原/统计能用上 |
-
-## 13 · 复审前待确认
-
-以下 3 项在 brainstorming 阶段未展开，写 spec 时点亮，等 Eugene 复审拍板后落到 planning：
-
-### 13.1 · Bun 在 v1 的具体角色
-
-「仅开发期 runtime」需要落到具体：
-
-- (a) **只作为 package manager**：用 `bun install` 替代 npm/pnpm，锁 `bun.lockb`；Vite / Vitest / scripts 都还走 node
-- (b) **package manager + script runner**：`bun run dev`、`bun run test` 走 bun，Vite 的 dev server 也由 bun 起
-- (c) **package manager + script runner + Vite 的 TS transform 都用 bun**：最大程度替代 node，只在打包 Electron 时切回 node
-
-推荐 **(b)**：`bun install` 比 npm 快 10x+，`bun run` 比 node 快启动；但 Vite 有独立 esbuild/rollup 流水线，不动更稳。
-
-### 13.2 · `workspace_dir` 首次启动是否必填
-
-三种方案：
-- (a) **必填**：首次引导抽屉里 API key 和 workspace_dir 都要填才能开聊；简单可预测
-- (b) **可选，工具触发时懒选**：不填也能开聊；模型第一次调用 file 类工具时，UI 弹目录选择器让用户当场选，选完后写入 settings，后续用户还能改
-- (c) **默认给个安全值**：默认 `~/Documents/EugentWorkspace`（不存在则自动创建）；用户随时能在设置里改
-
-推荐 **(b)**：起手最轻，也不牺牲安全（用户能看到"AI 想访问哪个目录"的时刻）；(c) 会导致大量新用户根本不知道有 workspace 这回事，工具行为会诡异。
-
-### 13.3 · deno 沙箱如何交付
-
-`code_exec` tool 用 `deno run --allow-none` 跑 JS/Python（deno 自带 pyodide-ish 能力有限，Python 可能要退化）。deno 是独立二进制约 100MB。两种交付：
-
-- (a) **随 app 打包**：Electron Builder 里把 deno macOS 二进制放到 `extraResources`，打包体积 +100MB，但即装即用
-- (b) **用户预装**：首次调用 `code_exec` 检查 `which deno`，缺失就在 UI 上给一键"用 brew 安装"引导；app 本身轻
-- (c) **v1 暂不做 Python**：`code_exec` 只支持 JS，用 `vm.runInNewContext`（Node 内置），无需外部二进制；v2 再补 Python
-
-推荐 **(c)**：v1 用作者自用，纯 JS 已经能解绝大多数"跑个片段验证"场景；避免打包 100MB 或引一次外部安装流程。
+| workspace_dir | 首次不必填，触发时懒选 | 起手轻 + 用户显式感知 AI 想访问哪 |
+| code_exec 沙箱 | v1 仅 JS，走 Node `vm.runInNewContext` | 免外部二进制 / 免 100MB 打包体积 |
