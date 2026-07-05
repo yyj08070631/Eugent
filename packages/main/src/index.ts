@@ -29,7 +29,7 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      preload: resolve(__dirname, '../preload/index.mjs'),
+      preload: resolve(__dirname, '../preload/index.js'),
     },
   });
 
