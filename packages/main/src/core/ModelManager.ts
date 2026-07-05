@@ -67,8 +67,8 @@ export class ModelManager {
     yield* client.stream({
       model,
       messages: params.messages,
-      tools: params.tools,
-      signal: params.signal,
+      ...(params.tools ? { tools: params.tools } : {}),
+      ...(params.signal ? { signal: params.signal } : {}),
       thinking: params.thinking ?? 'off',
     });
   }
