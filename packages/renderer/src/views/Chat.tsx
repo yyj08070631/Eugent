@@ -1,10 +1,11 @@
-import { useEffect, type ReactElement } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { useSessions } from '../stores/sessions.js';
 import { useMessages } from '../stores/messages.js';
 import { useStreaming } from '../stores/streaming.js';
 import { MessageBubble } from '../components/MessageBubble.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { InputArea } from '../components/InputArea.js';
+import { ErrorBanner } from '../components/ErrorBanner.js';
 import { ipc } from '../ipc/client.js';
 import type { AgentEvent, Message, ToolCallRecord } from '@eugent/shared';
 
@@ -15,6 +16,7 @@ export function Chat(): ReactElement {
   const appendMsg = useMessages((s) => s.append);
   const updateStreaming = useMessages((s) => s.updateLastAssistantContent);
   const setRun = useStreaming((s) => s.setRun);
+  const [lastError, setLastError] = useState<{ message: string; input: string } | null>(null);
 
   useEffect(() => {
     if (activeId) void loadMessages(activeId);
@@ -42,9 +44,15 @@ export function Chat(): ReactElement {
           appendMsg(placeholder);
         }
         updateStreaming(evt.sessionId, evt.delta);
-      } else if (evt.kind === 'done' || evt.kind === 'error') {
+      } else if (evt.kind === 'error') {
+        const list = messagesBySession[evt.sessionId] ?? [];
+        const lastUser = [...list].reverse().find((m) => m.role === 'user');
+        setLastError({ message: evt.message, input: lastUser?.content ?? '' });
         setRun(evt.sessionId, null);
-        // 刷新真实消息，替换 streaming placeholder
+        void loadMessages(evt.sessionId);
+      } else if (evt.kind === 'done') {
+        setLastError(null);
+        setRun(evt.sessionId, null);
         void loadMessages(evt.sessionId);
       }
       // tool_call / tool_result 事件在 done 时通过 loadMessages 拉最终；tool 卡片渲染从 messages 派生
@@ -60,6 +68,13 @@ export function Chat(): ReactElement {
 
   const list = messagesBySession[activeId] ?? [];
 
+  async function retry(): Promise<void> {
+    if (!lastError || !activeId) return;
+    const { runId } = await ipc.chat.send({ sessionId: activeId, input: lastError.input });
+    setRun(activeId, runId);
+    setLastError(null);
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -73,6 +88,7 @@ export function Chat(): ReactElement {
               : null}
           </div>
         ))}
+        {lastError ? <ErrorBanner message={lastError.message} onRetry={() => void retry()} /> : null}
       </div>
       <InputArea sessionId={activeId} />
     </div>
