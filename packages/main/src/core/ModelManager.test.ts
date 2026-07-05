@@ -12,12 +12,14 @@ const fakeStorage: SafeStorageLike = {
 
 function fakeClientFactory(apiKey: string): OpenAIClientLike {
   return {
-    async *stream(params): AsyncIterable<ModelChunk> {
+    stream: async (params): Promise<AsyncIterable<ModelChunk>> => {
       expect(params.model).toMatch(/^deepseek-v4-/);
       expect(params.thinking).toBe('off'); // grill 决策：默认关思考
-      yield { type: 'token', delta: 'hello ' };
-      yield { type: 'token', delta: apiKey };
-      yield { type: 'done' };
+      return (async function* () {
+        yield { type: 'token', delta: 'hello ' } satisfies ModelChunk;
+        yield { type: 'token', delta: apiKey } satisfies ModelChunk;
+        yield { type: 'done' } satisfies ModelChunk;
+      })();
     },
   };
 }

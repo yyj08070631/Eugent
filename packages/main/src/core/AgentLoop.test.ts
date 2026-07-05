@@ -21,9 +21,11 @@ const fakeStorage: SafeStorageLike = {
 function scriptClient(scripts: ModelChunk[][]): (k: string) => OpenAIClientLike {
   let i = 0;
   return () => ({
-    async *stream(): AsyncIterable<ModelChunk> {
+    stream: async (): Promise<AsyncIterable<ModelChunk>> => {
       const s = scripts[i++] ?? [{ type: 'done' }];
-      for (const c of s) yield c;
+      return (async function* () {
+        for (const c of s) yield c;
+      })();
     },
   });
 }

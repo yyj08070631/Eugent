@@ -1,5 +1,6 @@
 import type { ModelId } from '@eugent/shared';
 import type { SettingsRepo } from '../db/repo/SettingsRepo.js';
+import { withBackoff } from './retry.js';
 
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -23,13 +24,14 @@ export type ModelChunk =
   | { type: 'done' };
 
 export interface OpenAIClientLike {
+  // Task 31: 改为 async 返回 iterable，让 withBackoff 能捕获建流阶段的网络错
   stream(params: {
     model: string;
     messages: OpenAIMessage[];
     tools?: OpenAITool[];
     signal?: AbortSignal;
     thinking: 'on' | 'off';
-  }): AsyncIterable<ModelChunk>;
+  }): Promise<AsyncIterable<ModelChunk>>;
 }
 
 export interface ChatStreamParams {
@@ -62,15 +64,19 @@ export class ModelManager {
   async *chatStream(params: ChatStreamParams): AsyncIterable<ModelChunk> {
     const apiKey = this.settings.getApiKey();
     if (!apiKey) throw new Error('No API key configured');
-    const client = this.clientFactory(apiKey);
     const model = params.model ?? this.getSelected();
-    yield* client.stream({
-      model,
-      messages: params.messages,
-      ...(params.tools ? { tools: params.tools } : {}),
-      ...(params.signal ? { signal: params.signal } : {}),
-      thinking: params.thinking ?? 'off',
+    // 只把"建立流"步骤包进 withBackoff；一旦开始流就不再重试
+    const stream = await withBackoff(async () => {
+      const client = this.clientFactory(apiKey);
+      return client.stream({
+        model,
+        messages: params.messages,
+        ...(params.tools ? { tools: params.tools } : {}),
+        ...(params.signal ? { signal: params.signal } : {}),
+        thinking: params.thinking ?? 'off',
+      });
     });
+    yield* stream;
   }
 
   async testConnection(): Promise<{ ok: boolean; error?: string }> {

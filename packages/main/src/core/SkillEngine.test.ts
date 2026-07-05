@@ -13,10 +13,11 @@ const fakeStorage: SafeStorageLike = {
 
 function classifierClient(returned: string): (k: string) => OpenAIClientLike {
   return () => ({
-    async *stream(): AsyncIterable<ModelChunk> {
-      yield { type: 'token', delta: returned };
-      yield { type: 'done' };
-    },
+    stream: async (): Promise<AsyncIterable<ModelChunk>> =>
+      (async function* () {
+        yield { type: 'token', delta: returned } satisfies ModelChunk;
+        yield { type: 'done' } satisfies ModelChunk;
+      })(),
   });
 }
 
