@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.0.0",
+  "main": "out/main/index.js",
   "engines": { "node": ">=20.0.0" },
   "scripts": {
     "typecheck": "tsc -b",
