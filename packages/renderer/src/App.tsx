@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { Sidebar } from './views/Sidebar.js';
 import { Chat } from './views/Chat.js';
 import { SettingsDrawer } from './views/SettingsDrawer.js';
+import { ApprovalDialog } from './views/ApprovalDialog.js';
 import { useSettings } from './stores/settings.js';
 
 export function App(): ReactElement {
@@ -25,6 +26,7 @@ export function App(): ReactElement {
         <Chat />
       </main>
       <SettingsDrawer open={settingsOpen} onOpenChange={setSettingsOpen} forceUntilKey={force} />
+      <ApprovalDialog />
     </div>
   );
 }
