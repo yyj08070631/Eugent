@@ -4,10 +4,11 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
     "composite": true,
     "moduleResolution": "Bundler"
   },
-  "include": ["src", "index.html"],
-  "references": [{ "path": "../shared" }]
+  "include": ["src"],
+  "references": [{ "path": "../shared" }, { "path": "../preload" }]
 }
