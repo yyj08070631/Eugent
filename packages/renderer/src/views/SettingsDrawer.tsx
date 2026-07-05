@@ -32,6 +32,11 @@ export function SettingsDrawer({ open, onOpenChange, forceUntilKey }: Props): Re
 
   async function runTest(): Promise<void> {
     setStatus('测试中…');
+    // 若输入框里有新 key 但没保存，先保存再测（避免 no_api_key 假失败）
+    if (key) {
+      await update({ apiKey: key });
+      setKey('');
+    }
     const r = await test();
     setStatus(r.ok ? '连通性 OK' : `失败：${r.error ?? 'unknown'}`);
   }
