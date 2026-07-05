@@ -107,11 +107,11 @@ interface ToolResult {
 
 | 组件 | 关键方法 | 说明 |
 |---|---|---|
-| **ModelManager** | `chatStream(params) → AsyncIterable<Chunk>`<br>`getSelected() / setSelected(id)`<br>`getApiKey() / setApiKey(raw)` | `openai` SDK 指向 `https://api.deepseek.com`；模型偏好写 sqlite `settings.selected_model`；API key 走 `safeStorage.encryptString` → base64 → `settings.api_key_enc`。SkillEngine 分类调用固定 `deepseek-v4-flash` 非思考模式 |
+| **ModelManager** | `chatStream(params) → AsyncIterable<Chunk>`<br>`getSelected() / setSelected(id)`<br>`getApiKey() / setApiKey(raw)` | `openai` SDK 指向 `https://api.deepseek.com`；模型偏好写 sqlite `settings.selected_model`；API key 走 `safeStorage.encryptString` → base64 → `settings.api_key_enc`。**主 chatStream 与分类调用均通过 `extra_body.thinking.type='disabled'` 关闭思考模式**（`reasoning_content` 多轮拼接留 v1.1）；`chatStream(params)` 接受可选 `thinking?: 'on' \| 'off'`，缺省 `'off'` |
 | **ToolManager** | `register(spec)`<br>`list(allowlist?) → ToolSpec[]`<br>`invoke(name, args, ctx) → ToolResult` | 参数用 `ajv` 校验；`risk:'write'` 首次调用向 renderer 发权限请求事件、等回执；「本会话免确认」列表 `Map<sessionId, Set<toolName>>` 存内存 |
 | **MemoryManager** | `createSession() / listSessions() / renameSession() / deleteSession()`<br>`appendMessage(sid, msg)`<br>`getMessages(sid, limit?) → Message[]` | sqlite CRUD；上下文裁剪用**滑窗**：首条 system + 最近 20 轮 |
 | **ContextBuilder** | `build(sid, skill) → { messages, tools }` | `base_system` + `skill.systemPrompt` → system message；追加 history；`tools = ToolManager.list(skill.toolAllowlist)` |
-| **SkillEngine** | `select(userInput, recentHistory) → { skill, cleanedInput }` | **优先**斜杠指令（`/research`/`/code`/`/default`）；否则 `deepseek-v4-flash` 分类；未知斜杠指令原样送分类。Skill 定义写死在 `packages/main/src/skills/*.ts` |
+| **SkillEngine** | `select(userInput) → { skill, cleanedInput, source: 'slash' \| 'classifier' \| 'fallback' }` | **优先**斜杠指令（`/research`/`/code`/`/default`）；否则 `deepseek-v4-flash` 非思考模式做分类；未知斜杠指令原样送分类；分类失败/解析失败兜底 `default`。Skill 定义写死在 `packages/main/src/skills/*.ts` |
 | **AgentLoop** | `run(sid, userInput) → AsyncIterable<AgentEvent>` | think→act→observe 循环，`MAX_TURNS = 20`；每步 emit 事件；`AbortController` 支持中断 |
 
 ### 4.3 · 内置 Skill
@@ -306,7 +306,7 @@ CREATE TABLE settings (
 ### 7.3 · 交互约定
 
 - **快捷键**：⌘N 新会话、⌘⏎ 发送、Esc 停止流式、⌘, 打开设置
-- **skill badge**：手动 `/xxx` 才在用户气泡右上角显 badge；flash 自动分类结果不显
+- **skill badge**：最终 skill 不是 `default` 时都在用户气泡右上角显 badge，**不区分手动斜杠还是 flash 自动分类**（提升系统识别过程的透明度）
 - **流式渲染**：直接 append，不做打字机 CSS 动画；tool pending 时用 spinner
 - **停止按钮**：流式时右下角 ▷ 变 ⏹；点击后 abort；已产生 token 保留、消息 `partial=1`
 - **首字节空白**：SkillEngine flash 分类 + pro 主调用**串行**，UI 先显 "..." skeleton，token 到达替换
@@ -327,6 +327,8 @@ CREATE TABLE settings (
 3. 用户选目录 → 写入 `settings.workspace_dir` → 继续执行原 tool 调用
 4. 用户拒绝 → tool 返回 `{ok:false, error:'no_workspace'}`，交给模型处理
 5. 后续用户随时能在设置抽屉里改 `workspace_dir`
+
+**v1 拒绝语义**：用户点「拒绝本次调用」后**不记忆本会话**——下一次文件类工具触发时仍会再次弹 `pick_workspace`。理由：v1 单用户 MVP，相信 `deepseek-v4-pro` 有判断力放弃"文件方向"；如果实测遇到骚扰再在 v1.1 加会话级"拒绝记忆"（3 行改动，纯增量）。
 
 ## 8 · 错误处理
 
@@ -372,6 +374,7 @@ CREATE TABLE settings (
 
 - 长期记忆 / 向量检索 / RAG
 - 多模型供应商（OpenAI/Anthropic/本地）—— 仅 DeepSeek
+- **DeepSeek 思考模式与 `reasoning_content` 多轮拼接** —— v1 主 chatStream 与分类调用均强制 `thinking.type='disabled'`，规避多轮工具调用时 `reasoning_content` 必须回传的契约；开启思考模式与相应的 messages 表 `reasoning_content` 列 + `ContextBuilder` 拼接留 v1.1
 - Windows / Linux
 - 用户自定义 Skill（Skill 定义写死代码里）
 - 用户自定义 Tool / 插件市场
@@ -405,5 +408,7 @@ CREATE TABLE settings (
 | MAX_TURNS | 20 | 平衡自由度与失控风险 |
 | tool_call args | 完整才显示 | 避免流式 JSON 抖动 |
 | 中断标记 | `messages.partial` 列 | 未来复原/统计能用上 |
-| workspace_dir | 首次不必填，触发时懒选 | 起手轻 + 用户显式感知 AI 想访问哪 |
-| code_exec 沙箱 | v1 仅 JS，走 Node `vm.runInNewContext` | 免外部二进制 / 免 100MB 打包体积 |
+| workspace_dir | 首次不必填，触发时懒选；v1 拒绝不记忆 | 起手轻 + 用户显式感知 AI 想访问哪 |
+| code_exec 沙箱 | v1 仅 JS，`worker_threads` 独立线程跑 `vm.runInNewContext` | main 进程不阻塞 + `worker.terminate()` 立即响应 abort（同步 `vm.runInContext` 会冻结整个 App）|
+| DeepSeek 思考模式 | v1 主 + 分类调用均 `extra_body.thinking.type='disabled'` | 规避多轮工具调用时 `reasoning_content` 必须回传的契约；v1.1 再补 reasoning_content 全链路 |
+| skill badge | 最终 skill ≠ default 就显 | 提升识别过程透明度；无需在 messages 表新增 `skill_source` 列 |
