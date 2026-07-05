@@ -1,2 +1,2 @@
-// placeholder — populated in Task 24
-export {};
+import './api.js';
+export type { EugentApi } from './api.js';
