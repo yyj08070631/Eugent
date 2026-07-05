@@ -1,0 +1,23 @@
+{
+  "name": "eugent",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.0.0",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier -w ."
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.0",
+    "eslint": "^9.10.0",
+    "@typescript-eslint/parser": "^8.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.5.0"
+  }
+}
