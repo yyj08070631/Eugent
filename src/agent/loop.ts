@@ -96,6 +96,9 @@ export async function agentLoop(
                 );
               }
               break;
+
+            case "error":
+              throw part.error;
           }
         }
 
