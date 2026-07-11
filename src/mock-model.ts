@@ -40,6 +40,8 @@ function pickResponse(prompt: any[]): string {
   if (text.includes("测试预算")) return RESPONSES.budget;
   if (text.includes("请换一个思路解决问题"))
     return `根据查询结果：${prompt[prompt.length - 1].content[0].output.value}`;
+  if (text.includes("测试重试"))
+    return `重试成功！经过几次 429 错误后，我终于回来了。`;
   return RESPONSES.default;
 }
 
@@ -135,6 +137,7 @@ function buildTextChunks(text: string, usage: typeof USAGE_DEFAULT) {
 }
 
 export function createMockModel() {
+  let failN = 2;
   return {
     specificationVersion: "v2" as const,
     provider: "mock",
@@ -174,11 +177,15 @@ export function createMockModel() {
       const intent = detectToolIntent(prompt);
       const usage = pickUsage(prompt);
       const chunks =
-        intent === "error-429"
+        failN > 0 && intent === "error-429"
           ? buildErrorChunks(usage)
           : intent === "loop-forever"
             ? buildStuckToolCallChunks(usage)
             : buildTextChunks(pickResponse(prompt), usage);
+
+      if (failN > 0) {
+        failN--;
+      }
       return { stream: createDelayedStream(chunks, 30) };
     },
   };
