@@ -6,6 +6,10 @@ import { createMockModel } from "./mock-model";
 import "dotenv/config";
 import { agentLoop, type BudgetState } from "./agent/loop";
 
+// mock 声明的是 v2 spec，ai SDK 会打一条 "compatibility mode" warning——已知且预期，
+// 本地开发不需要看到；真要排查 SDK 内部问题时把这行注掉即可。
+(globalThis as any).AI_SDK_LOG_WARNINGS = false;
+
 console.log("process.env.DASHSCOPE_API_KEY: ", process.env.DASHSCOPE_API_KEY);
 
 const ds = createOpenAI({
