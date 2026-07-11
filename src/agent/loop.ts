@@ -42,7 +42,7 @@ export async function agentLoop(
     let shouldBreak = false;
     let lastToolCall: { name: string; input: unknown } | null = null;
     let stepResponse: Awaited<ReturnType<typeof streamText>["response"]>;
-    let stepUsage: Awaited<ReturnType<typeof streamText>["usage"]> | undefined;
+    let stepUsage: Awaited<ReturnType<typeof streamText>["usage"]>;
 
     // 步骤级重试：包裹整个 stream 消费过程
     for (let attempt = 1; ; attempt++) {
@@ -119,21 +119,29 @@ export async function agentLoop(
       }
     }
 
-    // 步骤真正跑完才计入预算——失败的重试不算钱
-    const totalTokens = stepUsage?.totalTokens;
-    if (typeof totalTokens === "number" && Number.isFinite(totalTokens)) {
-      budget.used += totalTokens;
-      console.log(
-        `  [预算] 本步 ${totalTokens} tokens，累计 ${budget.used}/${budget.limit}`,
-      );
-    }
-
     if (shouldBreak) {
       console.log("\n[循环检测触发，Agent 已停止]");
       break;
     }
 
     messages.push(...stepResponse!.messages);
+
+    // Token 预算追踪：budget 由调用方持有，跨轮持续累计
+    const inp =
+      typeof stepUsage?.inputTokens === "number"
+        ? stepUsage.inputTokens
+        : (stepUsage?.inputTokens?.total ?? 0);
+    const out =
+      typeof stepUsage?.outputTokens === "number"
+        ? stepUsage.outputTokens
+        : (stepUsage?.outputTokens?.total ?? 0);
+    budget.used += inp + out;
+    const pct = Math.round((budget.used / budget.limit) * 100);
+    console.log(`  [Token] ${budget.used}/${budget.limit} (${pct}%)`);
+    if (budget.used > budget.limit) {
+      console.log("\n[Token 预算耗尽，强制停止]");
+      break;
+    }
 
     if (!hasToolCall) {
       if (fullText) console.log();
