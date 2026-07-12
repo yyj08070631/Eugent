@@ -4,8 +4,9 @@ import {
   recordCall,
   recordResult,
   resetHistory,
-} from "../loop-detection.js";
-import { isRetryable, calculateDelay, sleep } from "../retry.js";
+} from "./loop-detection.js";
+import { isRetryable, calculateDelay, sleep } from "./retry.js";
+import { ToolRegistry } from "./tool-registry.js";
 
 const MAX_STEPS = 15;
 const MAX_RETRIES = 3;
@@ -17,7 +18,7 @@ export interface BudgetState {
 
 export async function agentLoop(
   model: any,
-  tools: any,
+  registry: ToolRegistry,
   messages: ModelMessage[],
   system: string,
   budget: BudgetState,
@@ -50,7 +51,7 @@ export async function agentLoop(
         const result = streamText({
           model,
           system,
-          tools,
+          tools: registry.toAISDKFormat(),
           messages,
           maxRetries: 0,
           onError: () => {},
