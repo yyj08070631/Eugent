@@ -425,12 +425,13 @@ export const startPreviewTool: ToolDefinition = {
           res.end();
           return;
         }
+        const body = readFileSync(filePath);
         res.writeHead(200, {
           "Content-Type":
             MIME[extname(filePath).toLowerCase()] || "application/octet-stream",
           "Cache-Control": "no-cache",
         });
-        res.end(readFileSync(filePath));
+        res.end(body);
       } catch {
         res.writeHead(404);
         res.end("Not Found");
