@@ -10,6 +10,7 @@ import type { ToolDefinition } from "./tool-registry.js";
 import fg from "fast-glob";
 import { execSync } from "node:child_process";
 import { createServer, Server } from "node:http";
+import { pickSearchTool, webFetchTool } from "./search-tools.js";
 
 export const weatherTool: ToolDefinition = {
   name: "get_weather",
@@ -458,4 +459,6 @@ export const allTools: ToolDefinition[] = [
   bashTool,
   fetchUrlTool,
   startPreviewTool,
+  pickSearchTool(),
+  webFetchTool,
 ];
